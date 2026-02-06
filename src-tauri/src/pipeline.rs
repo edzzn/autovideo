@@ -116,11 +116,8 @@ pub fn process_video(
         stats,
     };
 
-    progress_callback(PipelineEvent::PipelineCompleted {
-        result: result.clone(),
-    })?;
-
-    Ok(result)
+    let result_clone = result;
+    Ok(result_clone)
 }
 
 pub fn clean_up_temp_files(input_path: &str) {
