@@ -2,5 +2,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    autovideo_lib::run()
+    if let Err(e) = autovideo_lib::run() {
+        eprintln!("Error running Tauri application: {}", e);
+        std::process::exit(1);
+    }
 }
