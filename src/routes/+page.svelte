@@ -3,10 +3,19 @@
 
   let name = $state("");
   let greetMsg = $state("");
+  let ffmpegMsg = $state("");
 
   async function greet(event: Event) {
     event.preventDefault();
     greetMsg = await invoke("greet", { name });
+  }
+
+  async function getFFmpegVersion() {
+    try {
+      ffmpegMsg = await invoke("get_ffmpeg_version");
+    } catch (error) {
+      ffmpegMsg = "Error: " + (error as Error).toString();
+    }
   }
 </script>
 
@@ -31,6 +40,12 @@
     <button type="submit">Greet</button>
   </form>
   <p>{greetMsg}</p>
+
+  <div class="test-section">
+    <h2>FFmpeg Test</h2>
+    <button onclick={getFFmpegVersion}>Get FFmpeg Version</button>
+    <pre class="output">{ffmpegMsg}</pre>
+  </div>
 </main>
 
 <style>
@@ -133,6 +148,31 @@
     margin-right: 5px;
   }
 
+  .test-section {
+    margin-top: 2rem;
+    padding: 1rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background-color: white;
+  }
+
+  .test-section h2 {
+    margin-top: 0;
+  }
+
+  .output {
+    margin-top: 1rem;
+    padding: 0.5rem;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-family: monospace;
+    font-size: 0.875rem;
+    text-align: left;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
   @media (prefers-color-scheme: dark) {
     :root {
       color: #f6f6f6;
@@ -152,6 +192,14 @@
     button:active {
       background-color: #0f0f0f69;
     }
-  }
 
+    .test-section {
+      background-color: #1f1f1f;
+      border-color: #333;
+    }
+
+    .output {
+      background-color: #2f2f2f;
+    }
+  }
 </style>
