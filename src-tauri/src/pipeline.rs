@@ -1,7 +1,7 @@
 use std::fs;
 
 use crate::ffmpeg::{
-    cut_silences_and_export, detect_silences, enhance_audio, export_audio_only, get_video_duration,
+    copy_video, cut_silences_and_export, detect_silences, enhance_audio, get_video_duration,
 };
 use crate::models::{PipelineConfig, PipelineEvent, PipelineResult, TranscriptStats};
 use crate::transcribe::{get_model_path, transcribe_with_progress};
@@ -11,6 +11,9 @@ pub fn process_video(
     config: &PipelineConfig,
     progress_callback: impl Fn(PipelineEvent) -> Result<(), String>,
 ) -> Result<PipelineResult, String> {
+    // Get actual video duration first
+    let original_duration = get_video_duration(input_path)?;
+
     progress_callback(PipelineEvent::StageStarted {
         stage: "transcribe".to_string(),
     })?;
@@ -30,9 +33,6 @@ pub fn process_video(
         },
     )?;
 
-    let original_duration = transcript.segments.last().map(|s| s.end).unwrap_or(0.0);
-
-    let audio_path = input_path.to_string() + ".enhanced.aac";
     let output_path = input_path.to_string() + "_edited.mp4";
 
     let silence_threshold = config.silence_threshold_db;
@@ -44,44 +44,49 @@ pub fn process_video(
         stage: "detect_silences".to_string(),
     })?;
 
-    let mut silences = detect_silences(input_path, silence_threshold, silence_min_duration)?;
+    let silences = detect_silences(input_path, silence_threshold, silence_min_duration)?;
 
     progress_callback(PipelineEvent::StageCompleted {
         stage: "detect_silences".to_string(),
     })?;
 
-    let total_silence = silences.iter().sum::<f64>();
+    // Calculate total silence duration
+    let total_silence: f64 = silences.iter().map(|(start, end)| end - start).sum();
 
     let mut keep_ranges = Vec::new();
+    let cut_margin = config.cut_margin;
 
     if cut_silences && !silences.is_empty() {
         progress_callback(PipelineEvent::StageStarted {
             stage: "cut_silences".to_string(),
         })?;
 
-        if let Some(first) = silences.first_mut() {
-            *first = first.min(silence_min_duration / 2.0);
+        // Build keep_ranges from the gaps between silences (the non-silent parts)
+        // Apply cut_margin to preserve a bit of padding around speech
+        let mut last_end = 0.0;
+
+        for (silence_start, silence_end) in &silences {
+            // Keep from last_end to (silence_start + margin)
+            let keep_end = (silence_start + cut_margin).min(original_duration);
+
+            if keep_end > last_end {
+                keep_ranges.push((last_end, keep_end));
+            }
+
+            // Next segment starts at (silence_end - margin), but not before current keep_end
+            let next_start = (silence_end - cut_margin).max(0.0);
+            last_end = next_start.max(keep_end); // Prevent overlap
         }
 
-        if let Some(last) = silences.last_mut() {
-            *last = last.min(silence_min_duration / 2.0);
+        // Keep final segment from last silence end to video end
+        if last_end < original_duration {
+            keep_ranges.push((last_end, original_duration));
         }
 
-        let mut current_start = 0.0;
-        for silence_end in silences {
-            let silence_start = current_start + silence_end;
-            keep_ranges.push((current_start, silence_start));
-            current_start = silence_start;
-        }
-        keep_ranges.push((current_start, original_duration));
+        eprintln!("📊 Keep ranges ({} segments): {:?}", keep_ranges.len(), keep_ranges);
 
-        if enable_enhancement {
-            enhance_audio(input_path, &audio_path)?;
-        } else {
-            export_audio_only(input_path, &audio_path)?;
-        };
-
-        cut_silences_and_export(&audio_path, keep_ranges, &output_path, config)?;
+        // Pass original video to cut_silences_and_export (not audio file)
+        cut_silences_and_export(input_path, keep_ranges, &output_path, enable_enhancement)?;
 
         progress_callback(PipelineEvent::StageCompleted {
             stage: "cut_silences".to_string(),
@@ -97,7 +102,8 @@ pub fn process_video(
             stage: "enhance_audio".to_string(),
         })?;
     } else {
-        export_audio_only(input_path, &output_path)?;
+        // No processing requested - just copy with faststart
+        copy_video(input_path, &output_path)?;
     }
 
     let file_size = fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);

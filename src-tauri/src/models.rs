@@ -7,16 +7,25 @@ pub struct Transcript {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TranscriptResult {
+    pub segments: Vec<Segment>,
+    pub words: Vec<Word>,
+    pub duration_seconds: f64,
+    pub input_path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Segment {
     pub id: usize,
     pub start: f64,
     pub end: f64,
     pub text: String,
-    pub words: Option<Vec<Word>>,
+    pub words: Vec<Word>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Word {
+    pub id: String,
     pub word: String,
     pub start: f64,
     pub end: f64,

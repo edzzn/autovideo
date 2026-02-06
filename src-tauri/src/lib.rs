@@ -1,9 +1,10 @@
 mod ffmpeg;
+mod llm;
 mod models;
 mod pipeline;
 mod transcribe;
 
-use crate::models::{PipelineConfig, PipelineEvent, PipelineResult};
+use crate::models::{PipelineConfig, PipelineEvent, PipelineResult, TranscriptResult};
 use tauri::Emitter;
 
 #[tauri::command]
@@ -38,7 +39,26 @@ async fn process_video(_app: tauri::AppHandle, input_path: String, config: Pipel
 
     pipeline::clean_up_temp_files(&input_path);
 
+    // Emit completion event with the result
+    eprintln!("🎉 Pipeline completed successfully!");
+    _app.emit("pipeline-progress", PipelineEvent::PipelineCompleted {
+        result: result.clone(),
+    }).map_err(|e| e.to_string())?;
+
     Ok(result)
+}
+
+#[tauri::command]
+async fn transcribe_video(input_path: String, language: Option<String>, llm_api_key: Option<String>) -> Result<TranscriptResult, String> {
+    let lang_ref = language.as_deref();
+    transcribe::transcribe_video_for_editor(&input_path, lang_ref, llm_api_key.as_deref()).await
+}
+
+#[tauri::command]
+async fn export_edited_video(input_path: String, keep_ranges: Vec<(f64, f64)>, enhance_audio: bool) -> Result<String, String> {
+    let output_path = format!("{}_edited.mp4", input_path.trim_end_matches(".mp4").trim_end_matches(".MP4"));
+    ffmpeg::cut_silences_and_export(&input_path, keep_ranges, &output_path, enhance_audio)?;
+    Ok(output_path)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -51,7 +71,9 @@ pub fn run() -> Result<(), tauri::Error> {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             get_ffmpeg_version,
-            process_video
+            process_video,
+            transcribe_video,
+            export_edited_video
         ])
         .run(tauri::generate_context!())
         .map_err(|e| e.into())
